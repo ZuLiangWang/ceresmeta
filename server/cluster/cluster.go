@@ -48,9 +48,17 @@ func (c *Cluster) GetNodes() []*Node {
 
 	nodes := make([]*Node, 0, len(c.nodesCache))
 	for _, node := range c.nodesCache {
+		shardInfos := make([]*ShardInfo, 0, len(node.shardInfos))
+		for _, shardInfo := range node.shardInfos {
+			shardInfos = append(shardInfos, &ShardInfo{
+				ID:      shardInfo.ID,
+				Role:    shardInfo.Role,
+				Version: shardInfo.Version,
+			})
+		}
 		nodes = append(nodes, &Node{
-			meta:     ConvertNodeToPB(node),
-			shardIDs: node.shardIDs,
+			meta:       ConvertNodeToPB(node),
+			shardInfos: shardInfos,
 		})
 	}
 	return nodes
@@ -194,15 +202,18 @@ func (c *Cluster) loadCacheLocked(
 		}
 	}
 
+	shardInfos := make(map[uint32]*ShardInfo)
 	// Load node data into node cache.
 	for shardID, shardPbs := range shards {
 		for _, shard := range shardPbs {
 			node, ok := c.nodesCache[shard.GetNode()]
 			if !ok {
-				node = &Node{meta: nodesLoaded[shard.GetNode()]}
+				node = &Node{meta: nodesLoaded[shard.GetNode()], shardInfos: make([]*ShardInfo, 0)}
 				c.nodesCache[shard.GetNode()] = node
 			}
-			node.shardIDs = append(node.shardIDs, shardID)
+			shardInfo := &ShardInfo{ID: shardID, Role: shard.ShardRole}
+			node.shardInfos = append(node.shardInfos, shardInfo)
+			shardInfos[shardID] = shardInfo
 		}
 	}
 
@@ -236,6 +247,12 @@ func (c *Cluster) loadCacheLocked(
 			tables:  tables,
 			version: 0,
 		}
+
+		shardInfo, exists := shardInfos[shardID]
+		if !exists {
+			return errors.WithMessage(ErrShardNotFound, fmt.Sprintf("shard not found,shardID:%d", shardID))
+		}
+		shardInfo.Version = shardTopology.Version
 	}
 
 	return nil
@@ -567,11 +584,15 @@ func (c *Cluster) GetShardIDs(nodeName string) ([]uint32, error) {
 	if !ok {
 		return nil, ErrNodeNotFound.WithCausef("cluster GetShardIDs, nodeName:%s", nodeName)
 	}
-	return node.shardIDs, nil
+	shardIDs := make([]uint32, 0, len(node.shardInfos))
+	for _, shard := range node.shardInfos {
+		shardIDs = append(shardIDs, shard.ID)
+	}
+	return shardIDs, nil
 }
 
 func (c *Cluster) RegisterNode(ctx context.Context, nodeInfo *metaservicepb.NodeInfo) error {
-	nodePb := &clusterpb.Node{NodeStats: &clusterpb.NodeStats{Lease: nodeInfo.GetLease()}, Name: nodeInfo.GetEndpoint()}
+	nodePb := &clusterpb.Node{NodeStats: &clusterpb.NodeStats{Lease: nodeInfo.GetLease()}, Name: nodeInfo.GetEndpoint(), State: clusterpb.NodeState_ONLINE}
 	nodePb1, err := c.storage.CreateOrUpdateNode(ctx, c.clusterID, nodePb)
 	if err != nil {
 		return errors.WithMessagef(err, "cluster RegisterNode, nodeName:%s", nodeInfo.GetEndpoint())
@@ -613,12 +634,12 @@ func (c *Cluster) AllocShardID(ctx context.Context) (uint32, error) {
 
 func (c *Cluster) pickOneShardOnNode(nodeName string) (uint32, error) {
 	if node, ok := c.nodesCache[nodeName]; ok {
-		if len(node.shardIDs) == 0 {
+		if len(node.shardInfos) == 0 {
 			return 0, ErrNodeShardsIsEmpty.WithCausef("nodeName:%s", nodeName)
 		}
 
-		idx := rand.Int31n(int32(len(node.shardIDs))) // #nosec G404
-		return node.shardIDs[idx], nil
+		idx := rand.Int31n(int32(len(node.shardInfos))) // #nosec G404
+		return node.shardInfos[idx].ID, nil
 	}
 	return 0, ErrNodeNotFound.WithCausef("nodeName:%s", nodeName)
 }
@@ -682,10 +703,10 @@ func (c *Cluster) GetNodeShards(_ context.Context) (*GetNodeShardsResult, error)
 	defer c.lock.RUnlock()
 
 	for nodeName, node := range c.nodesCache {
-		for _, shardID := range node.shardIDs {
-			shard, ok := c.shardsCache[shardID]
+		for _, s := range node.shardInfos {
+			shard, ok := c.shardsCache[s.ID]
 			if !ok {
-				return nil, ErrShardNotFound.WithCausef("shardID:%d", shardID)
+				return nil, ErrShardNotFound.WithCausef("shardID:%d", s.ID)
 			}
 
 			var shardRole clusterpb.ShardRole
@@ -699,7 +720,7 @@ func (c *Cluster) GetNodeShards(_ context.Context) (*GetNodeShardsResult, error)
 			nodeShards = append(nodeShards, &NodeShard{
 				Endpoint: nodeName,
 				ShardInfo: &ShardInfo{
-					ID:      shardID,
+					ID:      s.ID,
 					Role:    shardRole,
 					Version: shard.version,
 				},
