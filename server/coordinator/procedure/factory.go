@@ -4,7 +4,6 @@ package procedure
 
 import (
 	"context"
-
 	"github.com/CeresDB/ceresdbproto/pkg/metaservicepb"
 	"github.com/CeresDB/ceresmeta/server/cluster"
 	"github.com/CeresDB/ceresmeta/server/coordinator/eventdispatch"
@@ -36,6 +35,13 @@ type DropTableRequest struct {
 
 	OnSucceeded func(*cluster.TableInfo) error
 	OnFailed    func(error) error
+}
+
+type ApplyRequest struct {
+	NodeName                 string
+	ShardsNeedReopen         []*cluster.ShardInfo
+	ShardsNeedClose          []*cluster.ShardInfo
+	ShardsNeedCloseAndReopen []*cluster.ShardInfo
 }
 
 func NewFactory(allocator id.Allocator, dispatch eventdispatch.Dispatch) *Factory {
@@ -71,6 +77,15 @@ func (f *Factory) CreateDropTableProcedure(ctx context.Context, request *DropTab
 	}
 	procedure := NewDropTableProcedure(f.dispatch, request.Cluster, id,
 		request.SourceReq, request.OnSucceeded, request.OnFailed)
+	return procedure, nil
+}
+
+func (f *Factory) CreateApplyProcedure(ctx context.Context, request *ApplyRequest) (Procedure, error) {
+	id, err := f.allocProcedureID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	procedure := NewApplyProcedure(f.dispatch, id, request.NodeName, request.ShardsNeedReopen, request.ShardsNeedCloseAndReopen, request.ShardsNeedClose)
 	return procedure, nil
 }
 

@@ -19,6 +19,7 @@ import (
 const (
 	heartbeatCheckInterval               = 10 * time.Second
 	heartbeatKeepAliveIntervalSec uint64 = 15
+	metaListBatchSize                    = 100
 )
 
 type Scheduler struct {
@@ -30,6 +31,7 @@ type Scheduler struct {
 	procedureManager procedure.Manager
 	procedureFactory *procedure.Factory
 	dispatch         eventdispatch.Dispatch
+	storage          procedure.Storage
 
 	checkNodeTicker *time.Ticker
 }
@@ -113,7 +115,7 @@ func (s *Scheduler) processNodes(ctx context.Context, nodes []*cluster.Registere
 
 // applyMetadataShardInfo verify shardInfo in heartbeats and metadata, they are forcibly synchronized to the latest version if they are inconsistent.
 // TODO: Encapsulate the following logic as a standalone ApplyProcedure.
-func (s *Scheduler) applyMetadataShardInfo(ctx context.Context, node string, realShards []*cluster.ShardInfo, expectShards []*cluster.ShardInfo) error {
+func (s *Scheduler) applyMetadataShardInfo(ctx context.Context, nodeName string, realShards []*cluster.ShardInfo, expectShards []*cluster.ShardInfo) error {
 	realShardInfoMapping := make(map[uint32]*cluster.ShardInfo, len(realShards))
 	expectShardInfoMapping := make(map[uint32]*cluster.ShardInfo, len(expectShards))
 	for _, realShard := range realShards {
@@ -123,15 +125,17 @@ func (s *Scheduler) applyMetadataShardInfo(ctx context.Context, node string, rea
 		expectShardInfoMapping[expectShard.ID] = expectShard
 	}
 
+	shardsNeedToReopen := []*cluster.ShardInfo{}
+	shardsNeedToCloseAndReopen := []*cluster.ShardInfo{}
+	shardNeedToClose := []*cluster.ShardInfo{}
+
 	// This includes the following cases:
 	for _, expectShard := range expectShards {
 		realShard, exists := realShardInfoMapping[expectShard.ID]
 
 		// 1. Shard exists in metadata and not exists in node, reopen lack shards on node.
 		if !exists {
-			if err := s.dispatch.OpenShard(ctx, node, &eventdispatch.OpenShardRequest{Shard: expectShard}); err != nil {
-				return errors.WithMessagef(err, "reopen shard failed, shardInfo:%d", expectShard.ID)
-			}
+			shardsNeedToReopen = append(shardsNeedToReopen, expectShard)
 			continue
 		}
 
@@ -139,14 +143,7 @@ func (s *Scheduler) applyMetadataShardInfo(ctx context.Context, node string, rea
 		if realShard.Version == expectShard.Version {
 			continue
 		}
-
-		// 3. Shard exists in both metadata and node, versions are inconsistent, close and reopen invalid shard on node.
-		if err := s.dispatch.CloseShard(ctx, node, &eventdispatch.CloseShardRequest{ShardID: expectShard.ID}); err != nil {
-			return errors.WithMessagef(err, "close shard failed, shardInfo:%d", expectShard.ID)
-		}
-		if err := s.dispatch.OpenShard(ctx, node, &eventdispatch.OpenShardRequest{Shard: expectShard}); err != nil {
-			return errors.WithMessagef(err, "reopen shard failed, shardInfo:%d", expectShard.ID)
-		}
+		shardsNeedToCloseAndReopen = append(shardsNeedToCloseAndReopen, expectShard)
 	}
 
 	// 4. Shard exists in node and not exists in metadata, close extra shard on node.
@@ -155,10 +152,68 @@ func (s *Scheduler) applyMetadataShardInfo(ctx context.Context, node string, rea
 		if ok {
 			continue
 		}
-		if err := s.dispatch.CloseShard(ctx, node, &eventdispatch.CloseShardRequest{ShardID: realShard.ID}); err != nil {
-			return errors.WithMessagef(err, "close shard failed, shardInfo:%d", realShard.ID)
-		}
+		shardNeedToClose = append(shardNeedToClose, realShard)
 	}
 
+	applyProcedure, err := s.procedureFactory.CreateApplyProcedure(ctx, &procedure.ApplyRequest{NodeName: nodeName, ShardsNeedReopen: shardsNeedToReopen, ShardsNeedClose: shardNeedToClose, ShardsNeedCloseAndReopen: shardsNeedToCloseAndReopen})
+	if err != nil {
+		return errors.WithMessagef(err, "create apply procedure failed, target nodeName:%s", nodeName)
+	}
+	if err := s.procedureManager.Submit(ctx, applyProcedure); err != nil {
+		return errors.WithMessagef(err, "submit apply procedure failed, procedureID:%s, target nodeName:%s", applyProcedure.ID(), nodeName)
+	}
+
+	return nil
+}
+
+func needRetry(m *procedure.Meta) bool {
+	if m.State == procedure.StateCancelled || m.State == procedure.StateFinished {
+		return false
+	}
+	return true
+}
+
+func (s *Scheduler) retryAll(ctx context.Context) error {
+	metas, err := s.storage.List(ctx, metaListBatchSize)
+	if err != nil {
+		return errors.WithMessage(err, "storage list meta failed")
+	}
+	for _, meta := range metas {
+		if !needRetry(meta) {
+			continue
+		}
+		p := restoreProcedure(meta)
+		err := s.retry(ctx, p)
+		return errors.WithMessagef(err, "retry procedure failed, procedureID:%d", p.ID())
+	}
+	return nil
+}
+
+func (s *Scheduler) retry(ctx context.Context, procedure procedure.Procedure) error {
+	err := s.procedureManager.Submit(ctx, procedure)
+	if err != nil {
+		return errors.WithMessagef(err, "start procedure failed, procedureID:%d", procedure.ID())
+	}
+	return nil
+}
+
+// Load meta and restore procedure.
+func restoreProcedure(meta *procedure.Meta) procedure.Procedure {
+	switch meta.Typ {
+	case procedure.Create:
+		return nil
+	case procedure.Delete:
+		return nil
+	case procedure.TransferLeader:
+		return nil
+	case procedure.Migrate:
+		return nil
+	case procedure.Split:
+		return nil
+	case procedure.Merge:
+		return nil
+	case procedure.Scatter:
+		return nil
+	}
 	return nil
 }

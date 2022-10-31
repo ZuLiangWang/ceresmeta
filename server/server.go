@@ -166,7 +166,7 @@ func (srv *Server) startServer(_ context.Context) error {
 	}
 	srv.clusterManager = manager
 
-	procedureManager, err := procedure.NewManagerImpl(srv.etcdCli, srv.cfg.StorageRootPath)
+	procedureManager, err := procedure.NewManagerImpl()
 	if err != nil {
 		return errors.WithMessage(err, "start server")
 	}

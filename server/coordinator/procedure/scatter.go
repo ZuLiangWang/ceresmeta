@@ -224,6 +224,9 @@ func (p *ScatterProcedure) Cancel(_ context.Context) error {
 }
 
 func (p *ScatterProcedure) State() State {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	return p.state
 }
 

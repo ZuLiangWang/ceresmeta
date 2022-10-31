@@ -9,4 +9,5 @@ var (
 	ErrProcedureNotFound    = coderr.NewCodeError(coderr.Internal, "procedure not found")
 	ErrClusterConfigChanged = coderr.NewCodeError(coderr.Internal, "cluster config changed")
 	ErrTableAlreadyExists   = coderr.NewCodeError(coderr.Internal, "table already exists")
+	ErrProcedureRunning     = coderr.NewCodeError(coderr.Internal, "cluster has running procedure")
 )
