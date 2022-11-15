@@ -15,4 +15,5 @@ var (
 	ErrNodeNotFound         = coderr.NewCodeError(coderr.NotFound, "NodeName not found")
 	ErrTableAlreadyExists   = coderr.NewCodeError(coderr.Internal, "table already exists")
 	ErrRouteTable           = coderr.NewCodeError(coderr.Internal, "route table")
+	ErrAllocShardID         = coderr.NewCodeError(coderr.Internal, "alloc shard id")
 )

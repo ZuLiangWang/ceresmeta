@@ -50,6 +50,15 @@ type TransferLeaderRequest struct {
 	NewLeaderNodeName string
 }
 
+type SplitRequest struct {
+	ClusterName    string
+	SchemaName     string
+	TableNames     []string
+	ShardID        storage.ShardID
+	NewShardID     storage.ShardID
+	TargetNodeName string
+}
+
 func NewFactory(allocator id.Allocator, dispatch eventdispatch.Dispatch, storage Storage) *Factory {
 	return &Factory{
 		idAllocator: allocator,
@@ -101,6 +110,22 @@ func (f *Factory) CreateTransferLeaderProcedure(ctx context.Context, request Tra
 
 	return NewTransferLeaderProcedure(f.dispatch, c, f.storage,
 		request.ShardID, request.OldLeaderNodeName, request.NewLeaderNodeName, id)
+}
+
+func (f *Factory) CreateSplitProcedure(ctx context.Context, request SplitRequest) (Procedure, error) {
+	id, err := f.allocProcedureID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := f.clusterManager.GetCluster(ctx, request.ClusterName)
+	if err != nil {
+		log.Error("cluster not found", zap.String("clusterName", request.ClusterName))
+		return nil, cluster.ErrClusterNotFound
+	}
+
+	procedure := NewSplitProcedure(id, f.dispatch, f.storage, c, request.SchemaName, request.ShardID, request.NewShardID, request.TableNames, request.TargetNodeName)
+	return procedure, nil
 }
 
 func (f *Factory) allocProcedureID(ctx context.Context) (uint64, error) {

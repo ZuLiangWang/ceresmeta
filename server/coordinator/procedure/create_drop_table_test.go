@@ -23,7 +23,7 @@ func TestCreateAndDropTable(t *testing.T) {
 			ClusterName: clusterName,
 		},
 		SchemaName: testSchemaName,
-		Name:       testTableName,
+		Name:       testTableName0,
 	}, func(_ cluster.CreateTableResult) error {
 		return nil
 	}, func(_ error) error {
@@ -31,7 +31,7 @@ func TestCreateAndDropTable(t *testing.T) {
 	})
 	err := procedure.Start(ctx)
 	re.NoError(err)
-	table, b, err := c.GetTable(testSchemaName, testTableName)
+	table, b, err := c.GetTable(testSchemaName, testTableName0)
 	re.NoError(err)
 	re.Equal(b, true)
 	re.NotNil(table)
@@ -51,7 +51,7 @@ func TestCreateAndDropTable(t *testing.T) {
 	})
 	err = procedure.Start(ctx)
 	re.NoError(err)
-	table, b, err = c.GetTable(testSchemaName, testTableName)
+	table, b, err = c.GetTable(testSchemaName, testTableName0)
 	re.NoError(err)
 	re.Equal(b, false)
 }

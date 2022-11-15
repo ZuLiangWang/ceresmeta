@@ -62,7 +62,7 @@ func (c *Cluster) Name() string {
 	return c.metaData.Name
 }
 
-func (c *Cluster) GetTables(shardIDs []storage.ShardID, nodeName string) map[storage.ShardID]ShardTables {
+func (c *Cluster) GetShardTables(shardIDs []storage.ShardID, nodeName string) map[storage.ShardID]ShardTables {
 	shardTableIDs := c.topologyManager.GetTableIDs(shardIDs, nodeName)
 
 	result := make(map[storage.ShardID]ShardTables, len(shardIDs))
@@ -125,6 +125,15 @@ func (c *Cluster) DropTable(ctx context.Context, schemaName, tableName string) (
 	return DropTableResult{
 		ShardVersionUpdate: updateVersion,
 	}, nil
+}
+
+func (c *Cluster) UpdateShardTables(ctx context.Context, shardTables ShardTables) (UpdateShardTablesResult, error) {
+	updateVersion, err := c.topologyManager.UpdateShardTables(ctx, shardTables)
+	if err != nil {
+		return UpdateShardTablesResult{}, errors.WithMessagef(err, "update shard tables")
+	}
+
+	return UpdateShardTablesResult{updateVersion}, nil
 }
 
 // GetOrCreateSchema the second output parameter bool: returns true if the schema was newly created.
