@@ -33,23 +33,20 @@ func getRequestFromEvent[T any](event *fsm.Event) (T, error) {
 	}
 }
 
-func IsContains(slice []string, target string) bool {
-	for _, a := range slice {
-		if a == target {
-			return true
-		}
-	}
-	return false
-}
-
 func IsSubSlice(subSlice []string, slice []string) bool {
 	if len(subSlice) > len(slice) {
 		return false
 	}
-	for _, val := range slice {
-		if !IsContains(slice, val) {
+	sliceMap := map[string]int{}
+
+	for i, s := range slice {
+		sliceMap[s] = i
+	}
+	for _, s := range subSlice {
+		if _, exists := sliceMap[s]; !exists {
 			return false
 		}
 	}
+
 	return true
 }

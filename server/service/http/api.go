@@ -196,23 +196,22 @@ func (a *API) split(writer http.ResponseWriter, req *http.Request) {
 		a.respondError(writer, ErrParseRequest, nil)
 		return
 	}
-	ctx := context.Background()
 
-	c, err := a.clusterManager.GetCluster(ctx, splitRequest.ClusterName)
+	c, err := a.clusterManager.GetCluster(req.Context(), splitRequest.ClusterName)
 	if err != nil {
 		log.Error("cluster not found", zap.String("clusterName", splitRequest.ClusterName), zap.Error(err))
 		a.respondError(writer, cluster.ErrClusterNotFound, "cluster not found")
 		return
 	}
 
-	newShardID, err := c.AllocShardID(ctx)
+	newShardID, err := c.AllocShardID(req.Context())
 	if err != nil {
-		log.Error("alloc shard id failed")
+		log.Error("alloc shard id failed", zap.Error(err))
 		a.respondError(writer, cluster.ErrAllocShardID, "alloc shard id failed")
 		return
 	}
 
-	splitProcedure, err := a.procedureFactory.CreateSplitProcedure(ctx, procedure.SplitRequest{
+	splitProcedure, err := a.procedureFactory.CreateSplitProcedure(req.Context(), procedure.SplitRequest{
 		ClusterName:    splitRequest.ClusterName,
 		SchemaName:     splitRequest.SchemaName,
 		TableNames:     splitRequest.SplitTables,
@@ -226,7 +225,7 @@ func (a *API) split(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := a.procedureManager.Submit(ctx, splitProcedure); err != nil {
+	if err := a.procedureManager.Submit(req.Context(), splitProcedure); err != nil {
 		log.Error("submit split procedure", zap.Error(err))
 		a.respondError(writer, procedure.ErrSubmitProcedure, "submit split procedure")
 		return

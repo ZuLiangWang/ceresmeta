@@ -19,10 +19,10 @@ import (
 
 const (
 	eventSplitCreateNewShardMetadata = "EventSplitCreateNewShardMetadata"
-	eventSplitCreateNewShardView     = "EventCreateNewShardView"
+	eventSplitCreateNewShardView     = "EventSplitCreateNewShardView"
 	eventSplitOpenNewShard           = "EventSplitOpenNewShard"
-	eventSplitDeleteShardTables      = "EventCloseTable"
-	eventSplitCreateShardTables      = "EventOpenTable"
+	eventSplitDeleteShardTables      = "EventSplitDeleteShardTables"
+	eventSplitCreateShardTables      = "EventSplitCreateShardTables"
 	eventSplitFinish                 = "EventSplitFinish"
 
 	stateSplitBegin                  = "StateBegin"
@@ -44,7 +44,7 @@ var (
 		{Name: eventSplitFinish, Src: []string{stateSplitCreateShardTables}, Dst: stateSplitFinish},
 	}
 	splitCallbacks = fsm.Callbacks{
-		eventSplitCreateNewShardMetadata: splitOpenNewShardMetadataCallback,
+		eventSplitCreateNewShardMetadata: splitCreateNewShardMetadataCallback,
 		eventSplitCreateNewShardView:     splitCreateShardViewCallback,
 		eventSplitOpenNewShard:           splitOpenShardCallback,
 		eventSplitDeleteShardTables:      splitDeleteShardTablesCallback,
@@ -53,7 +53,7 @@ var (
 	}
 )
 
-// SplitProcedure fsm: Update ShardTable Metadata -> OpenNewShard -> CloseTable
+// SplitProcedure fsm: Begin-> CreateNewShardMetadata-> CreateNewShardView -> OpenNewShard -> DeleteShardTables -> CreateShardTables -> Finish
 type SplitProcedure struct {
 	id uint64
 
@@ -117,7 +117,7 @@ func (p *SplitProcedure) Typ() Typ {
 }
 
 func (p *SplitProcedure) Start(ctx context.Context) error {
-	p.updateStateWithLock(StateRunning)
+	p.updateState(StateRunning)
 
 	splitCallbackRequest := splitCallbackRequest{
 		ctx:            ctx,
@@ -137,7 +137,7 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitCreateNewShardMetadata, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure create new shard metadata")
 			}
 		case stateSplitCreateNewShardMetadata:
@@ -145,7 +145,7 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitCreateNewShardView, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure create new shard view")
 			}
 		case stateSplitCreateNewShardView:
@@ -153,7 +153,7 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitOpenNewShard, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure open new shard")
 			}
 		case stateSplitOpenNewShard:
@@ -161,7 +161,7 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitDeleteShardTables, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure delete shard tables")
 			}
 		case stateSplitDeleteShardTables:
@@ -169,7 +169,7 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitCreateShardTables, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure create shard tables")
 			}
 		case stateSplitCreateShardTables:
@@ -177,21 +177,21 @@ func (p *SplitProcedure) Start(ctx context.Context) error {
 				return errors.WithMessage(err, "split procedure persist")
 			}
 			if err := p.fsm.Event(eventSplitFinish, splitCallbackRequest); err != nil {
-				p.updateStateWithLock(StateFailed)
+				p.updateState(StateFailed)
 				return errors.WithMessagef(err, "split procedure create shard tables")
 			}
 		case stateSplitFinish:
 			if err := p.persist(ctx); err != nil {
 				return errors.WithMessage(err, "split procedure persist")
 			}
-			p.updateStateWithLock(StateFinished)
+			p.updateState(StateFinished)
 			return nil
 		}
 	}
 }
 
 func (p *SplitProcedure) Cancel(_ context.Context) error {
-	p.updateStateWithLock(StateCancelled)
+	p.updateState(StateCancelled)
 	return nil
 }
 
@@ -201,15 +201,15 @@ func (p *SplitProcedure) State() State {
 	return p.state
 }
 
-func (p *SplitProcedure) updateStateWithLock(state State) {
+func (p *SplitProcedure) updateState(state State) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	p.state = state
 }
 
-// splitOpenNewShardMetadataCallback create new shard and update metadata, table mapping will be updated in splitCloseTableCallback & splitOpenTableCallback callbacks.
-func splitOpenNewShardMetadataCallback(event *fsm.Event) {
+// splitCreateNewShardMetadataCallback create new shard and update metadata, table mapping will be updated in splitCloseTableCallback & splitOpenTableCallback callbacks.
+func splitCreateNewShardMetadataCallback(event *fsm.Event) {
 	request, err := getRequestFromEvent[splitCallbackRequest](event)
 	if err != nil {
 		cancelEventWithLog(event, err, "get request from event")
@@ -273,6 +273,7 @@ func splitOpenNewShardMetadataCallback(event *fsm.Event) {
 		ShardRole: storage.ShardRoleLeader,
 		NodeName:  leaderShardNode.NodeName,
 	})
+	log.Info("split update cluster view", zap.Uint32("newShardID", uint32(request.newShardID)), zap.String("nodeName", leaderShardNode.NodeName))
 
 	// Update cluster view metadata.
 	if err = request.cluster.UpdateClusterView(ctx, storage.ClusterStateStable, updateShardNodes); err != nil {
@@ -289,6 +290,7 @@ func splitCreateShardViewCallback(event *fsm.Event) {
 	}
 	ctx := request.ctx
 
+	log.Info("split create shard view", zap.Uint32("newShardID", uint32(request.newShardID)))
 	if err := request.cluster.CreateShardViews(ctx, []cluster.CreateShardView{{
 		ShardID: request.newShardID,
 		Tables:  []storage.TableID{},
@@ -306,7 +308,8 @@ func splitOpenShardCallback(event *fsm.Event) {
 	}
 	ctx := request.ctx
 
-	// Send open new shard request to CSE.
+	// Send open new shard request to CeresDB.
+	log.Info("split open shard", zap.Uint32("newShardID", uint32(request.shardID)), zap.String("nodeName", request.targetNodeName))
 	if err := request.dispatch.OpenShard(ctx, request.targetNodeName, eventdispatch.OpenShardRequest{
 		Shard: cluster.ShardInfo{
 			ID:      request.newShardID,
@@ -348,6 +351,11 @@ func splitDeleteShardTablesCallback(event *fsm.Event) {
 	// Update shard tables.
 	shardTables.Tables = remainingTables
 	shardTables.Shard.Version++
+	remainingTableNames := make([]string, len(remainingTables))
+	for _, table := range remainingTables {
+		remainingTableNames = append(remainingTableNames, table.Name)
+	}
+	log.Info("split delete shard tables", zap.String("remainingTableNames", strings.Join(remainingTableNames, ",")), zap.Uint32("shardID", uint32(request.shardID)))
 	if _, err := request.cluster.UpdateShardTables(ctx, shardTables); err != nil {
 		cancelEventWithLog(event, err, "update shard tables")
 		return
@@ -404,6 +412,7 @@ func splitCreateShardTablesCallback(event *fsm.Event) {
 		})
 	}
 
+	log.Info("split update shard tables", zap.String("tableNames", strings.Join(request.tableNames, ",")))
 	if _, err := request.cluster.UpdateShardTables(ctx, cluster.ShardTables{
 		Shard:  newShardInfo,
 		Tables: tables,

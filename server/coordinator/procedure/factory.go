@@ -59,11 +59,12 @@ type SplitRequest struct {
 	TargetNodeName string
 }
 
-func NewFactory(allocator id.Allocator, dispatch eventdispatch.Dispatch, storage Storage) *Factory {
+func NewFactory(allocator id.Allocator, dispatch eventdispatch.Dispatch, storage Storage, manager cluster.Manager) *Factory {
 	return &Factory{
-		idAllocator: allocator,
-		dispatch:    dispatch,
-		storage:     storage,
+		idAllocator:    allocator,
+		dispatch:       dispatch,
+		storage:        storage,
+		clusterManager: manager,
 	}
 }
 
@@ -124,7 +125,8 @@ func (f *Factory) CreateSplitProcedure(ctx context.Context, request SplitRequest
 		return nil, cluster.ErrClusterNotFound
 	}
 
-	procedure := NewSplitProcedure(id, f.dispatch, f.storage, c, request.SchemaName, request.ShardID, request.NewShardID, request.TableNames, request.TargetNodeName)
+	procedure := NewSplitProcedure(id, f.dispatch, f.storage, c, request.SchemaName,
+		request.ShardID, request.NewShardID, request.TableNames, request.TargetNodeName)
 	return procedure, nil
 }
 
