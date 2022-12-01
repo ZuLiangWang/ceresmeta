@@ -123,7 +123,9 @@ func (m *ManagerImpl) retryAll(ctx context.Context) error {
 
 func (m *ManagerImpl) startProcedureWorker(ctx context.Context, procedures <-chan Procedure) {
 	for procedure := range procedures {
+		log.Info("procedure start", zap.Uint64("procedureID", procedure.ID()))
 		err := procedure.Start(ctx)
+		log.Info("procedure finish", zap.Uint64("procedureID", procedure.ID()))
 		if err != nil {
 			log.Error("procedure start failed", zap.Error(err))
 		}

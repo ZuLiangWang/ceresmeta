@@ -201,6 +201,8 @@ func (p *ScatterProcedure) Typ() Typ {
 }
 
 func (p *ScatterProcedure) Start(ctx context.Context) error {
+	log.Info("scatter procedure start", zap.Uint64("procedureID", p.id))
+
 	p.updateStateWithLock(StateRunning)
 
 	scatterCallbackRequest := &ScatterCallbackRequest{

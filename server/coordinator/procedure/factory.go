@@ -75,6 +75,13 @@ type CreatePartitionTableRequest struct {
 	OnFailed    func(error) error
 }
 
+type ApplyRequest struct {
+	NodeName                 string
+	ShardsNeedReopen         []cluster.ShardInfo
+	ShardsNeedClose          []cluster.ShardInfo
+	ShardsNeedCloseAndReopen []cluster.ShardInfo
+}
+
 func NewFactory(allocator id.Allocator, dispatch eventdispatch.Dispatch, storage Storage, manager cluster.Manager, partitionTableProportionOfNodes float32) *Factory {
 	return &Factory{
 		idAllocator:                     allocator,
@@ -196,6 +203,15 @@ func (f *Factory) CreateSplitProcedure(ctx context.Context, request SplitRequest
 	}
 
 	procedure := NewSplitProcedure(id, f.dispatch, f.storage, c, request.SchemaName, request.ShardID, request.NewShardID, request.TableNames, request.TargetNodeName)
+	return procedure, nil
+}
+
+func (f *Factory) CreateApplyProcedure(ctx context.Context, request ApplyRequest) (Procedure, error) {
+	id, err := f.allocProcedureID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	procedure := NewApplyProcedure(f.dispatch, id, request.NodeName, request.ShardsNeedReopen, request.ShardsNeedCloseAndReopen, request.ShardsNeedClose, f.storage)
 	return procedure, nil
 }
 
