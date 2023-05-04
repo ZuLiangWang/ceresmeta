@@ -53,6 +53,7 @@ func (a *API) NewAPIRouter() *Router {
 	router.Post("/route", a.route)
 	router.Post("/dropTable", a.dropTable)
 	router.Post("/getNodeShards", a.getNodeShards)
+	router.Put("/enableSchedule", a.enableSchedule)
 	router.Get("/healthCheck", a.healthCheck)
 
 	return router
@@ -364,6 +365,32 @@ func (a *API) split(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	a.respond(writer, newShardID)
+}
+
+type UpdateEnableScheduleRequest struct {
+	ClusterName    string `json:"clusterName"`
+	EnableSchedule bool   `json:"enableSchedule"`
+}
+
+func (a *API) enableSchedule(writer http.ResponseWriter, req *http.Request) {
+	var updateEnableScheduleRequest UpdateEnableScheduleRequest
+	err := json.NewDecoder(req.Body).Decode(&updateEnableScheduleRequest)
+	if err != nil {
+		log.Error("decode request body failed", zap.Error(err))
+		a.respondError(writer, ErrParseRequest, "")
+		return
+	}
+
+	c, err := a.clusterManager.GetCluster(req.Context(), updateEnableScheduleRequest.ClusterName)
+	if err != nil {
+		log.Error("cluster not found", zap.String("clusterName", updateEnableScheduleRequest.ClusterName), zap.Error(err))
+		a.respondError(writer, metadata.ErrClusterNotFound, "cluster not found")
+		return
+	}
+
+	c.GetSchedulerManager().UpdateEnableSchedule(req.Context(), updateEnableScheduleRequest.EnableSchedule)
+
+	a.respond(writer, nil)
 }
 
 func (a *API) healthCheck(writer http.ResponseWriter, _ *http.Request) {

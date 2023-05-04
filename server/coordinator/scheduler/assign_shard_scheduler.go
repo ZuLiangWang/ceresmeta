@@ -28,7 +28,7 @@ func NewAssignShardScheduler(factory *coordinator.Factory, nodePicker coordinato
 }
 
 func (a AssignShardScheduler) Schedule(ctx context.Context, clusterSnapshot metadata.Snapshot) (ScheduleResult, error) {
-	if clusterSnapshot.Topology.ClusterView.State != storage.ClusterStateStable {
+	if clusterSnapshot.Topology.ClusterView.State == storage.ClusterStateEmpty {
 		return ScheduleResult{}, nil
 	}
 
@@ -38,7 +38,7 @@ func (a AssignShardScheduler) Schedule(ctx context.Context, clusterSnapshot meta
 		if exists {
 			continue
 		}
-		newLeaderNode, err := a.nodePicker.PickNode(ctx, clusterSnapshot.RegisteredNodes)
+		newLeaderNode, err := a.nodePicker.PickNode(ctx, shardView.ShardID, clusterSnapshot.RegisteredNodes)
 		if err != nil {
 			return ScheduleResult{}, err
 		}

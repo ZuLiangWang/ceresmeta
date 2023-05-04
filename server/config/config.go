@@ -43,11 +43,12 @@ const (
 	defaultMinScanLimit    int  = 20
 	defaultIDAllocatorStep uint = 20
 
-	defaultClusterName                     = "defaultCluster"
-	defaultClusterNodeCount                = 2
-	defaultClusterReplicationFactor        = 1
-	defaultClusterShardTotal               = 8
-	defaultPartitionTableProportionOfNodes = 0
+	defaultClusterName              = "defaultCluster"
+	defaultClusterNodeCount         = 2
+	defaultClusterReplicationFactor = 1
+	defaultClusterShardTotal        = 8
+	// TODO: enableSchedule should be set false, this is to be compatible with the implementation of CeresDB's local storage, which will be required later...
+	enableSchedule = false
 
 	defaultHTTPPort = 8080
 
@@ -107,6 +108,9 @@ type Config struct {
 	DefaultClusterNodeCount         int    `toml:"default-cluster-node-count" env:"DEFAULT_CLUSTER_NODE_COUNT"`
 	DefaultClusterReplicationFactor int    `toml:"default-cluster-replication-factor" env:"DEFAULT_CLUSTER_REPLICATION_FACTOR"`
 	DefaultClusterShardTotal        int    `toml:"default-cluster-shard-total" env:"DEFAULT_CLUSTER_SHARD_TOTAL"`
+
+	// When the EnableSchedule is turned on, the failover scheduling will be turned on, which is used for CeresDB cluster publishing and using local storage.
+	EnableSchedule bool `toml:"enable-schedule" env:"ENABLE_SCHEDULE"`
 
 	ClientUrls          string `toml:"client-urls" env:"CLIENT_URLS"`
 	PeerUrls            string `toml:"peer-urls" env:"PEER_URLS"`
@@ -269,6 +273,7 @@ func MakeConfigParser() (*Parser, error) {
 		DefaultClusterNodeCount:         defaultClusterNodeCount,
 		DefaultClusterReplicationFactor: defaultClusterReplicationFactor,
 		DefaultClusterShardTotal:        defaultClusterShardTotal,
+		EnableSchedule:                  enableSchedule,
 
 		HTTPPort: defaultHTTPPort,
 	}

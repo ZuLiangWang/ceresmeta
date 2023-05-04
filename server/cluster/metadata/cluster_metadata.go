@@ -99,8 +99,8 @@ func (c *ClusterMetadata) GetShardTables(shardIDs []storage.ShardID) map[storage
 		}
 		result[shardID] = ShardTables{
 			Shard: ShardInfo{
-				ID:      shardTableID.ShardNode.ID,
-				Role:    shardTableID.ShardNode.ShardRole,
+				ID:      shardID,
+				Role:    storage.ShardRoleLeader,
 				Version: shardTableID.Version,
 			},
 			Tables: tableInfos,
@@ -378,16 +378,16 @@ func (c *ClusterMetadata) RegisterNode(ctx context.Context, registeredNode Regis
 
 	c.registeredNodesCache[registeredNode.Node.Name] = registeredNode
 
-	// When the number of nodes in the cluster reaches the threshold, modify the cluster status to stable.
+	// When the number of nodes in the cluster reaches the threshold, modify the cluster status to prepare.
 	// TODO: Consider the design of the entire cluster state, which may require refactoring.
 	if uint32(len(c.registeredNodesCache)) >= c.metaData.MinNodeCount && c.topologyManager.GetClusterState() == storage.ClusterStateEmpty {
-		if err := c.UpdateClusterView(ctx, storage.ClusterStateStable, []storage.ShardNode{}); err != nil {
+		if err := c.UpdateClusterView(ctx, storage.ClusterStatePrepare, []storage.ShardNode{}); err != nil {
 			log.Error("update cluster view failed", zap.Error(err))
 		}
 	}
-
 	// Update shard node mapping.
-	shardNodes := make(map[string][]storage.ShardNode, len(registeredNode.ShardInfos))
+	shardNodes := make(map[string][]storage.ShardNode, 1)
+	shardNodes[registeredNode.Node.Name] = make([]storage.ShardNode, 0, len(registeredNode.ShardInfos))
 	for _, shardInfo := range registeredNode.ShardInfos {
 		shardNodes[registeredNode.Node.Name] = append(shardNodes[registeredNode.Node.Name], storage.ShardNode{
 			ID:        shardInfo.ID,

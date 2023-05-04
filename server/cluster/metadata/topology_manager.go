@@ -53,9 +53,8 @@ type TopologyManager interface {
 }
 
 type ShardTableIDs struct {
-	ShardNode storage.ShardNode
-	TableIDs  []storage.TableID
-	Version   uint64
+	TableIDs []storage.TableID
+	Version  uint64
 }
 
 type GetShardTablesByNodeResult struct {
@@ -80,6 +79,26 @@ type CreateShardView struct {
 type Topology struct {
 	ShardViewsMapping map[storage.ShardID]storage.ShardView
 	ClusterView       storage.ClusterView
+}
+
+func (t *Topology) IsStable() bool {
+	if t.ClusterView.State != storage.ClusterStateStable {
+		return false
+	}
+	if len(t.ClusterView.ShardNodes) != len(t.ShardViewsMapping) {
+		return false
+	}
+	return true
+}
+
+func (t *Topology) IsPrepareFinished() bool {
+	if t.ClusterView.State != storage.ClusterStatePrepare {
+		return false
+	}
+	if len(t.ShardViewsMapping) != len(t.ClusterView.ShardNodes) {
+		return false
+	}
+	return true
 }
 
 type TopologyManagerImpl struct {
@@ -146,15 +165,10 @@ func (m *TopologyManagerImpl) GetTableIDs(shardIDs []storage.ShardID) map[storag
 
 	shardTableIDs := make(map[storage.ShardID]ShardTableIDs, len(shardIDs))
 	for _, shardID := range shardIDs {
-		for _, shardNode := range m.shardNodesMapping[shardID] {
-			shardView := m.shardTablesMapping[shardID]
-
-			shardTableIDs[shardID] = ShardTableIDs{
-				ShardNode: shardNode,
-				TableIDs:  shardView.TableIDs,
-				Version:   shardView.Version,
-			}
-			break
+		shardView := m.shardTablesMapping[shardID]
+		shardTableIDs[shardID] = ShardTableIDs{
+			TableIDs: shardView.TableIDs,
+			Version:  shardView.Version,
 		}
 	}
 
