@@ -25,4 +25,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ceresdb/ceresmeta-server:latest,ceresdb/ceresmeta-server:${{github.ref_name}}
+          tags: zuliangwang/ceresmeta-server:latest,zuliangwang/ceresmeta-server:${{github.ref_name}}
