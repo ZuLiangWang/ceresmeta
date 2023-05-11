@@ -123,10 +123,11 @@ func InitStableCluster(ctx context.Context, t *testing.T) *cluster.Cluster {
 	snapshot := c.GetMetadata().GetClusterSnapshot()
 	shardNodes := make([]storage.ShardNode, 0, DefaultShardTotal)
 	nodeLength := len(snapshot.RegisteredNodes)
-	for i := 0; i < len(snapshot.Topology.ShardViewsMapping); i++ {
-		pickNodeIndex := i % nodeLength
+
+	for shardID, _ := range snapshot.Topology.ShardViewsMapping {
+		pickNodeIndex := int(shardID) % nodeLength
 		shardNodes = append(shardNodes, storage.ShardNode{
-			ID:        snapshot.Topology.ShardViewsMapping[i].ShardID,
+			ID:        shardID,
 			ShardRole: storage.ShardRoleLeader,
 			NodeName:  snapshot.RegisteredNodes[pickNodeIndex].Node.Name,
 		})
