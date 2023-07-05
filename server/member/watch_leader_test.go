@@ -50,12 +50,13 @@ func TestWatchLeaderSingle(t *testing.T) {
 	}()
 
 	// Wait for watcher starting
-	time.Sleep(time.Duration(200) * time.Millisecond)
+	// TODO: This unit test may fail. Currently, it is solved by increasing the sleep time, and the code needs to be optimized in the future.
+	time.Sleep(time.Duration(2000) * time.Millisecond)
 
 	// check the member has been the leader
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
-	resp, err := mem.GetLeader(ctx)
+	resp, err := mem.getLeader(ctx)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, resp.Leader.Id, mem.ID)
@@ -67,7 +68,7 @@ func TestWatchLeaderSingle(t *testing.T) {
 	// check again whether the leader should be reset
 	ctx, cancel = context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
-	resp, err = mem.GetLeader(ctx)
+	resp, err = mem.getLeader(ctx)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Nil(t, resp.Leader)

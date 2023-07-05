@@ -16,6 +16,7 @@ import (
 	"github.com/CeresDB/ceresmeta/server/cluster/metadata"
 	"github.com/CeresDB/ceresmeta/server/config"
 	"github.com/CeresDB/ceresmeta/server/etcdutil"
+	"github.com/CeresDB/ceresmeta/server/limiter"
 	"github.com/CeresDB/ceresmeta/server/member"
 	metagrpc "github.com/CeresDB/ceresmeta/server/service/grpc"
 	"github.com/CeresDB/ceresmeta/server/service/http"
@@ -37,6 +38,7 @@ type Server struct {
 
 	// The fields below are initialized after Run of server is called.
 	clusterManager cluster.Manager
+	flowLimiter    *limiter.FlowLimiter
 
 	// member describes membership in ceresmeta cluster.
 	member  *member.Member
@@ -159,13 +161,19 @@ func (srv *Server) startServer(_ context.Context) error {
 		MaxScanLimit: srv.cfg.MaxScanLimit, MinScanLimit: srv.cfg.MinScanLimit,
 	})
 
-	manager, err := cluster.NewManagerImpl(storage, srv.etcdCli, srv.etcdCli, srv.cfg.StorageRootPath, srv.cfg.IDAllocatorStep)
+	topologyType, err := metadata.ParseTopologyType(srv.cfg.TopologyType)
 	if err != nil {
-		return errors.WithMessage(err, "start server")
+		return err
+	}
+
+	manager, err := cluster.NewManagerImpl(storage, srv.etcdCli, srv.etcdCli, srv.cfg.StorageRootPath, srv.cfg.IDAllocatorStep, topologyType)
+	if err != nil {
+		return err
 	}
 	srv.clusterManager = manager
+	srv.flowLimiter = limiter.NewFlowLimiter(srv.cfg.FlowLimiter)
 
-	api := http.NewAPI(manager, srv.status, http.NewForwardClient(srv.member, srv.cfg.HTTPPort))
+	api := http.NewAPI(manager, srv.status, http.NewForwardClient(srv.member, srv.cfg.HTTPPort), srv.flowLimiter)
 	httpService := http.NewHTTPService(srv.cfg.HTTPPort, time.Second*10, time.Second*10, api.NewAPIRouter())
 	go func() {
 		err := httpService.Start()
@@ -216,13 +224,13 @@ func (srv *Server) watchEtcdLeaderPriority(_ context.Context) {
 }
 
 func (srv *Server) createDefaultCluster(ctx context.Context) error {
-	leaderResp, err := srv.member.GetLeader(ctx)
+	resp, err := srv.member.GetLeaderAddr(ctx)
 	if err != nil {
 		log.Warn("get leader failed", zap.Error(err))
 	}
 
 	// Create default cluster by the leader.
-	if leaderResp.IsLocal {
+	if resp.IsLocal {
 		topologyType, err := metadata.ParseTopologyType(srv.cfg.TopologyType)
 		if err != nil {
 			return err
@@ -266,8 +274,16 @@ func (srv *Server) GetClusterManager() cluster.Manager {
 	return srv.clusterManager
 }
 
-func (srv *Server) GetLeader(ctx context.Context) (*member.GetLeaderResp, error) {
-	return srv.member.GetLeader(ctx)
+func (srv *Server) GetLeader(ctx context.Context) (member.GetLeaderAddrResp, error) {
+	// Get leader with cache.
+	return srv.member.GetLeaderAddr(ctx)
+}
+
+func (srv *Server) GetFlowLimiter() (*limiter.FlowLimiter, error) {
+	if srv.flowLimiter == nil {
+		return nil, ErrFlowLimiterNotFound
+	}
+	return srv.flowLimiter, nil
 }
 
 type leadershipEventCallbacks struct {

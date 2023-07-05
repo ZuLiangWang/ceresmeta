@@ -18,11 +18,14 @@ import (
 )
 
 const (
-	defaultGrpcHandleTimeoutMs int64 = 60 * 1000
-	defaultEtcdStartTimeoutMs  int64 = 60 * 1000
-	defaultCallTimeoutMs             = 5 * 1000
-	defaultMaxTxnOps                 = 128
-	defaultEtcdLeaseTTLSec           = 10
+	defaultGrpcHandleTimeoutMs    int64 = 60 * 1000
+	defaultInitialLimiterCapacity int   = 100 * 1000
+	defaultInitialLimiterRate     int   = 10 * 1000
+	defaultEnableLimiter          bool  = false
+	defaultEtcdStartTimeoutMs     int64 = 60 * 1000
+	defaultCallTimeoutMs                = 5 * 1000
+	defaultMaxTxnOps                    = 128
+	defaultEtcdLeaseTTLSec              = 10
 
 	defaultNodeNamePrefix          = "ceresmeta"
 	defaultRootPath                = "/ceresdb"
@@ -62,14 +65,24 @@ const (
 	defaultLogFile     = "/ceresmeta.log"
 )
 
+type LimiterConfig struct {
+	// Limit is the updated rate of tokens.
+	Limit int `toml:"limit" env:"FLOW_LIMITER_LIMIT"`
+	// Burst is the maximum number of tokens.
+	Burst int `toml:"burst" env:"FLOW_LIMITER_BURST"`
+	// Enable is used to control the switch of the limiter.
+	Enable bool `toml:"enable" env:"FLOW_LIMITER_ENABLE"`
+}
+
 // Config is server start config, it has three input modes:
 // 1. toml config file
 // 2. env variables
 // Their loading has priority, and low priority configurations will be overwritten by high priority configurations.
 // The priority from high to low is: env variables > toml config file.
 type Config struct {
-	Log     log.Config `toml:"log" env:"LOG"`
-	EtcdLog log.Config `toml:"etcd-log" env:"ETCD_LOG"`
+	Log         log.Config    `toml:"log" env:"LOG"`
+	EtcdLog     log.Config    `toml:"etcd-log" env:"ETCD_LOG"`
+	FlowLimiter LimiterConfig `toml:"flow-limiter" env:"FLOW_LIMITER"`
 
 	GrpcHandleTimeoutMs int64 `toml:"grpc-handle-timeout-ms" env:"GRPC_HANDLER_TIMEOUT_MS"`
 	EtcdStartTimeoutMs  int64 `toml:"etcd-start-timeout-ms" env:"ETCD_START_TIMEOUT_MS"`
@@ -239,6 +252,11 @@ func MakeConfigParser() (*Parser, error) {
 		EtcdLog: log.Config{
 			Level: log.DefaultLogLevel,
 			File:  log.DefaultLogFile,
+		},
+		FlowLimiter: LimiterConfig{
+			Limit:  defaultInitialLimiterRate,
+			Burst:  defaultInitialLimiterCapacity,
+			Enable: defaultEnableLimiter,
 		},
 
 		GrpcHandleTimeoutMs: defaultGrpcHandleTimeoutMs,
