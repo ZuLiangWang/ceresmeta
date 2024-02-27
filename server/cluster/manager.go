@@ -311,8 +311,12 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 		return errors.WithMessage(err, "get shard node by tableID")
 	}
 
-	if _, ok := getShardNodeResult.ShardNodes[table.ID]; !ok {
-		return metadata.ErrShardNotFound
+	if _, ok := getShardNodeResult.ShardNodes[table.ID]; !ok || len(getShardNodeResult.ShardNodes) == 0 {
+		// Only delete table metadata when shard is not assign for this table.
+		if _, err := cluster.metadata.DropTableMetadata(ctx, schemaName, tableName); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if len(getShardNodeResult.ShardNodes[table.ID]) != 1 || len(getShardNodeResult.Version) != 1 {
