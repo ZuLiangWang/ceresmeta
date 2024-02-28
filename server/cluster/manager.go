@@ -298,7 +298,7 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 		return errors.WithMessage(err, "get cluster")
 	}
 
-	table, ok, err := cluster.metadata.GetTable(schemaName, tableName)
+	_, ok, err := cluster.metadata.GetTable(schemaName, tableName)
 	if !ok {
 		return metadata.ErrTableNotFound
 	}
@@ -306,37 +306,8 @@ func (m *managerImpl) DropTable(ctx context.Context, clusterName, schemaName, ta
 		return errors.WithMessage(err, "get table")
 	}
 
-	getShardNodeResult, err := cluster.metadata.GetShardNodeByTableIDs([]storage.TableID{table.ID})
-	if err != nil {
-		return errors.WithMessage(err, "get shard node by tableID")
-	}
-
-	if _, ok := getShardNodeResult.ShardNodes[table.ID]; !ok || len(getShardNodeResult.ShardNodes) == 0 {
-		// Only delete table metadata when shard is not assign for this table.
-		if _, err := cluster.metadata.DropTableMetadata(ctx, schemaName, tableName); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if len(getShardNodeResult.ShardNodes[table.ID]) != 1 || len(getShardNodeResult.Version) != 1 {
-		return metadata.ErrShardNotFound
-	}
-
-	shardID := getShardNodeResult.ShardNodes[table.ID][0].ID
-	version, ok := getShardNodeResult.Version[shardID]
-	if !ok {
-		return metadata.ErrVersionNotFound
-	}
-
-	err = cluster.metadata.DropTable(ctx, metadata.DropTableRequest{
-		SchemaName:    schemaName,
-		TableName:     tableName,
-		ShardID:       shardID,
-		LatestVersion: version,
-	})
-	if err != nil {
-		return errors.WithMessage(err, "cluster drop table")
+	if _, err := cluster.metadata.DropTableMetadata(ctx, schemaName, tableName); err != nil {
+		return err
 	}
 
 	return nil
